@@ -39,21 +39,24 @@ namespace VirtualFlightOnlineTransmitter
 		}
 
 		public const string Id = "as49d216-e00f4-4a63-b73c-f62c1144b54242";
-		public const string Application_Title = "VFO Transmitter+ 1.0.1.20" + AssemblyVersionAttribute;
+		public const string Application_Title = "VirtualFlightTransmitter - v1.0.1.21";
 
 		private bool fakeFsConnectForDebug = false;
 		private bool fakeFsConnected = false;
+		private bool writeFileLog= false;
 
 		private bool dataReceived = false;
 		private bool dataSendOkay = false;
 
+		private static int REFRESH_MILLIS_MIN = 3000;
 		private static int TICK_MILLIS = 200; // check State every 100ms
 		private int count = 0;
 
 		/// <summary>Constructor for the Form</summary>
-		public frmMain(bool debug)
+		public frmMain(string arg)
 		{
-			fakeFsConnectForDebug = debug;
+			fakeFsConnectForDebug = ( arg == "fake" );
+			writeFileLog = (arg == "log" || arg == "fake");
 
 			state = State.Off;
 			InitializeComponent();
@@ -68,16 +71,17 @@ namespace VirtualFlightOnlineTransmitter
 		/// <param name="e"></param>
 		private void Main_Load(object sender, EventArgs e)
 		{
-
+			int millis = Math.Max(REFRESH_MILLIS_MIN, Properties.Settings.Default.RefreshMillis);
 			// pre-fill the settings boxes with data from properties
-			tbServerURL.Text = Properties.Settings.Default.ServerURL;
-			tbPin.Text = Properties.Settings.Default.Pin;
+			tbServerURL.Text  = Properties.Settings.Default.ServerURL;
+			tbPin.Text        = Properties.Settings.Default.Pin;
+			tbRefresh.Text    = millis.ToString(); 
 			cbMSFSServer.Text = Properties.Settings.Default.MSFSServer;
-			tbCallsign.Text = Properties.Settings.Default.Callsign;
-			tbPilotName.Text = Properties.Settings.Default.PilotName;
-			tbGroupName.Text = Properties.Settings.Default.GroupName;
-			tbNotes.Text = Properties.Settings.Default.Notes;
-			tbRefresh.Text = Properties.Settings.Default.RefreshMillis.ToString();
+			tbCallsign.Text   = Properties.Settings.Default.Callsign;
+			tbPilotName.Text  = Properties.Settings.Default.PilotName;
+			tbGroupName.Text  = Properties.Settings.Default.GroupName;
+			tbNotes.Text      = Properties.Settings.Default.Notes;
+			
 
 			tmrTransmit.Start(); // transmits data every few seconds
 		}
@@ -85,7 +89,7 @@ namespace VirtualFlightOnlineTransmitter
 		/// <summary>State machine</summary>
 		enum State
 		{
-			Off, On, Connecting, Connected, Receiving, Waiting, Broken
+			Off, On, Connecting, Connected, Receiving, Waiting, Breaking, Broken
 		}
 		private State state = State.Off;
 
@@ -99,13 +103,14 @@ namespace VirtualFlightOnlineTransmitter
 			{
 				case State.Off: SetMessage("Off"); break;
 
-				case State.On: Connect(); break;
+				case State.On        : Connect(); break;
 				case State.Connecting: AwaitResponse(); break; // wait to be connected
-				case State.Broken: Waiting(State.On); break;
+				case State.Breaking  : Breaking(); break;
+				case State.Broken    : Waiting(State.On); break;
 
 				case State.Connected: RequestFlightData(); break;
 				case State.Receiving: Receiving(); break;
-				case State.Waiting: Waiting(State.Connected); break;
+				case State.Waiting  : Waiting(State.Connected); break;
 			}
 		}
 
@@ -122,17 +127,19 @@ namespace VirtualFlightOnlineTransmitter
 				}
 				else
 				{
-					if (flightSimulatorConnection.Connected)
-					{
-						state = State.Receiving;
-						flightSimulatorConnection.RequestData((int)Requests.PlaneInfoRequest, this.planeInfoDefinitionId);
-						SetMessage("Data ...");
-					}
-					else if (flightSimulatorConnection.Paused)
+					WriteLine("RequestFlightData, connected: " + flightSimulatorConnection.Connected
+																							+ ", paused: " + flightSimulatorConnection.Paused );
+					if (flightSimulatorConnection.Paused)
 					{
 						count = 0;
 						state = State.Waiting;
 						SetMessage("Sim paused");
+					}
+					else if (flightSimulatorConnection.Connected)
+					{
+						state = State.Receiving;
+						SetMessage("Data ...");
+						flightSimulatorConnection.RequestData((int)Requests.PlaneInfoRequest, this.planeInfoDefinitionId);
 					}
 					else
 					{
@@ -144,6 +151,7 @@ namespace VirtualFlightOnlineTransmitter
 			}
 			catch (Exception ex)
 			{
+				WriteLine("RequestFlightData failed: " + ex.Message);
 				count = 0;
 				state = State.Broken;
 				SetMessage("Data error");
@@ -154,11 +162,21 @@ namespace VirtualFlightOnlineTransmitter
 		{
 			if (fakeFsConnectForDebug && fakeFsConnected)
 				FakeFlightData();
+			else
+			{
+				count++;
+				if (count > Properties.Settings.Default.RefreshMillis / TICK_MILLIS)
+				{
+					// Mmmhh... that takes too long I'm giving up
+					state = State.Broken;
+				}
+			}
 		}
 
 		private void FakeFlightData()
 		{
 			dataReceived = true;
+			state = State.Waiting;
 			Random rnd = new Random();
 			string aircraft_type = "Cessna";
 			double latitude = 53.0 + rnd.NextDouble() / 10.0;
@@ -174,8 +192,6 @@ namespace VirtualFlightOnlineTransmitter
 															airspeed, groundspeed, touchdown_velocity, transponder_code.ToString());
 			this.DataReceivedEvent(aircraft_type, latitude, longitude, altitude, heading, airspeed,
 															groundspeed, touchdown_velocity, transponder_code);
-			if (state != State.Broken)
-				state = State.Waiting;
 		}
 
 
@@ -184,9 +200,17 @@ namespace VirtualFlightOnlineTransmitter
 			count++;
 			if (count > Properties.Settings.Default.RefreshMillis / TICK_MILLIS)
 			{
+				WriteLine("Waiting done: " + state + " -> " + nextState);
 				state = nextState;
 				count = 0;
 			}
+			string tickle = tsslMain.Text;
+			if (tickle.Substring(tickle.Length - 1) != "+")
+				tsslMain.Text = tickle + "+";
+			else
+				tsslMain.Text = tickle.Substring(0, tickle.Length - 1);
+			
+
 		}
 
 		/// <summary>Handler to receive information from SimConnect</summary>
@@ -198,6 +222,8 @@ namespace VirtualFlightOnlineTransmitter
 			{
 				if (e.RequestId == (uint)Requests.PlaneInfoRequest)
 				{
+					state = State.Waiting;
+					WriteLine("Recieved flight data ");
 					PlaneInfoResponse r = (PlaneInfoResponse)e.Data.FirstOrDefault();
 					string aircraft_type = r.Title;
 					double latitude = r.PlaneLatitude;
@@ -220,14 +246,13 @@ namespace VirtualFlightOnlineTransmitter
 				}
 				else
 				{
-					SetMessage("FS " + e.RequestId);
+					WriteLine("Recieved data type: " + e.RequestId);
 				}
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine(ex.Message);
+				WriteLine("HandleReceivedFsData: " + ex.Message);
 				SetMessage("Error");
-				state = State.Broken;
 			}
 		}
 
@@ -268,6 +293,7 @@ namespace VirtualFlightOnlineTransmitter
 			string result = "";
 			string notes = Properties.Settings.Default.Notes;
 			string version = System.Windows.Forms.Application.ProductVersion;
+			WriteLine("SendingDataToServer: now ...");
 
 			try
 			{
@@ -310,25 +336,17 @@ namespace VirtualFlightOnlineTransmitter
 							result = reader.ReadToEnd();
 							dataSendOkay = true;
 							SetMessage("Data send");
+							WriteLine("SendDataToServer: " + result);
 						}
 					}
 				}
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine(ex.Message);
+				WriteLine("Server response: " + ex.Message);
 				SetMessage("SERVER Down");
 			}
 			return result;
-		}
-
-		void GoOffline(string message)
-		{
-			EnableTextBoxes(true);
-			state = State.Off;
-			dataReceived = false;
-			dataSendOkay = false;
-			SetMessage(message);
 		}
 
 		private bool IsFsConnected()
@@ -344,18 +362,22 @@ namespace VirtualFlightOnlineTransmitter
 				return;
 
 			state = State.Connecting;
+			dataReceived = false;
+			dataSendOkay = false;
 			count = 0;
 
 			// first check if the default parameters have been changed, check if the parameters are empty
 			if (tbCallsign.Text == "Your Callsign" || tbCallsign.Text == string.Empty ||
 					tbPilotName.Text == "Your Name" || tbPilotName.Text == string.Empty ||
 					tbGroupName.Text == string.Empty || tbServerURL.Text == string.Empty ||
-					Properties.Settings.Default.RefreshMillis < 500)
+					Properties.Settings.Default.RefreshMillis < 1000)
 			{
 				MessageBox.Show("It looks like you haven't changed your server, callsign, name or groupname yet.\n " +
 												"Please set them properly before connecting.",
 												"Let's do this first", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-				GoOffline("Off - Please change your data");
+				EnableTextBoxes(true);
+				state = State.Off;
+				SetMessage("Off");
 				return;
 			}
 			// Disable the textboxes
@@ -370,6 +392,7 @@ namespace VirtualFlightOnlineTransmitter
 			}
 			else
 			{
+				WriteLine("Connecting to Sim ...");
 				try
 				{
 					// connect to simulator, and lazy loading
@@ -385,10 +408,11 @@ namespace VirtualFlightOnlineTransmitter
 
 					SetMessage(" ");
 					state = State.Connected;
+					WriteLine("Connected to Sim OKAY" );
 				}
 				catch (Exception ex)
 				{
-					SetMessage("Sim failed");
+					WriteLine("Connect to Sim failed: " + ex.Message); 
 					state = State.Broken;
 					count = 0;
 				}
@@ -406,28 +430,36 @@ namespace VirtualFlightOnlineTransmitter
 
 
 		/// <summary>Helper method to disconnect from SimConnect and update the interface appropriately</summary>
-		private void Disconnect()
+		private void Breaking()
 		{
 			dataReceived = false;
 			dataSendOkay = false;
-			if (state != State.Off) state = State.On;
-			SetMessage(" ");
-
 			try
 			{
 				if (fakeFsConnectForDebug)
+				{
 					fakeFsConnected = false;
-				else if (flightSimulatorConnection.Connected || flightSimulatorConnection.Paused)
+					WriteLine("Disconnect from FakeSim");
+				}
+				else if (flightSimulatorConnection.Connected)
 				{
 					flightSimulatorConnection.FsDataReceived -= this.HandleReceivedFsData;
 					flightSimulatorConnection.Disconnect();
+					WriteLine("Disconnected from Sim");
 				}
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine(ex.Message);
+				WriteLine("Disconnect: " + ex.Message);
 			}
+		}
+
+		private void Disconnect()
+		{
+			state = State.Off;
+			Breaking();
 			// switch the UI components back on
+			state = State.Off;
 			EnableTextBoxes(true);
 		}
 
@@ -440,6 +472,19 @@ namespace VirtualFlightOnlineTransmitter
 			text = text.Substring(0, Math.Min(text.Length, 49));
 			tsslMain.Text = text;
 			this.Refresh();
+		}
+
+		void WriteLine(string line)
+		{
+			if (writeFileLog)
+			{
+				using (StreamWriter w = File.AppendText("transmitter.log"))
+				{
+					w.WriteLine(DateTime.Now + ": " + line);
+				}
+			} else	{
+				Console.WriteLine(line);
+			}
 		}
 
 		private void EnableTextBoxes(bool enabled)
@@ -492,8 +537,8 @@ namespace VirtualFlightOnlineTransmitter
 
 		private void btnDisconnect_Click(object sender, EventArgs e)
 		{
-			Disconnect();
 			state = State.Off;
+			Disconnect();
 		}
 
 		/// <summary>last actions on closing of the form</summary>
@@ -555,7 +600,11 @@ namespace VirtualFlightOnlineTransmitter
 
 		private void tbRefresh_TextChanged(object sender, EventArgs e)
 		{
-			int value = 5000;
+		}
+
+		private void tbRefresh_Leave(object sender, EventArgs e)
+		{
+			int value = REFRESH_MILLIS_MIN;
 			try
 			{
 				value = int.Parse(tbRefresh.Text);
@@ -564,17 +613,13 @@ namespace VirtualFlightOnlineTransmitter
 			{
 				SetMessage(formatException.Message);
 			}
-			if (value < 500)
+			if (value < REFRESH_MILLIS_MIN)
 			{
-				value = 500;
-				tbRefresh.Text = "500";
+				value = REFRESH_MILLIS_MIN;
+				tbRefresh.Text = "" + REFRESH_MILLIS_MIN;
 			}
 			Properties.Settings.Default.RefreshMillis = value;
 			Properties.Settings.Default.Save();
-		}
-
-		private void tbRefresh_Leave(object sender, EventArgs e)
-		{
 			tbRefresh.Text = tbRefresh.Text.Trim();
 		}
 		private void tbServerURL_Leave(object sender, EventArgs e)
@@ -609,7 +654,12 @@ namespace VirtualFlightOnlineTransmitter
 		private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
 		{
 			string version = System.Windows.Forms.Application.ProductVersion;
-			MessageBox.Show("Transmitter\nby Jonathan Beckett\nVirtual Flight Online\nhttps://virtualflight.online\nVersion " + version, "About", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			MessageBox.Show("Based on Transmitter\n" +
+											"by Jonathan Beckett\n" +
+											"Virtual Flight Online\n" +
+											"https://virtualflight.online\n" +
+											"Version " + version + " by Soulsurfer", 
+											"About", MessageBoxButtons.OK, MessageBoxIcon.Information);
 		}
 		/// <summary>Exits the application (shuts things down first)</summary>
 		/// <param name="sender"></param>
@@ -631,7 +681,7 @@ namespace VirtualFlightOnlineTransmitter
 			if (!this.flightSimulatorConnection.Connected)
 			{
 				tbServerURL.Text = "https://yourserver/send.php";
-				tbPin.Text = "1234";
+				tbPin.Text = "1003";
 				tbCallsign.Text = "Your Callsign";
 				tbPilotName.Text = "Your Name";
 				tbGroupName.Text = "Your Group";

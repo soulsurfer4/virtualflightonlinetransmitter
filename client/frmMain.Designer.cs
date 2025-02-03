@@ -47,9 +47,12 @@ namespace VirtualFlightOnlineTransmitter
 			tmrTransmit.Tick += new System.EventHandler(this.OnTick);
 
 			ComponentResourceManager resources = new ComponentResourceManager(typeof(frmMain));
-			this.gbUserInfo = new GroupBox();
-			this.gbAircraftData = new GroupBox();
 			this.mnuMain = new MenuStrip();
+			this.mnuMain.SuspendLayout();
+			this.gbUserInfo = new GroupBox();
+			this.gbUserInfo.SuspendLayout();
+			this.gbAircraftData = new GroupBox();
+			this.gbAircraftData.SuspendLayout();
 
 			this.transmitterToolStripMenuItem = new ToolStripMenuItem();
 			this.toolStripMenuItem4 = new ToolStripSeparator();
@@ -60,14 +63,7 @@ namespace VirtualFlightOnlineTransmitter
 			this.aircraftDataToolStripMenuItem = new ToolStripMenuItem();
 			this.helpToolStripMenuItem = new ToolStripMenuItem();
 			this.aboutToolStripMenuItem = new ToolStripMenuItem();
-			this.ssMain = new StatusStrip();
-			this.tsslMain = new ToolStripStatusLabel();
-			this.tsslMain.Font = FONT;
 
-			this.gbUserInfo.SuspendLayout();
-			this.gbAircraftData.SuspendLayout();
-			this.mnuMain.SuspendLayout();
-			this.ssMain.SuspendLayout();
 			this.SuspendLayout();
 			// 
 			// lbServerURL
@@ -90,6 +86,40 @@ namespace VirtualFlightOnlineTransmitter
 			this.tbPin.TextChanged += new System.EventHandler(this.tbPin_TextChanged);
 			this.tbPin.Leave += new System.EventHandler(this.tbPin_Leave);
 
+			// Refresh rate
+			this.lbRefresh = NewLabelAt("Send every ms");
+
+			this.tbRefresh = NewTextAt(true);
+			this.tbRefresh.TabIndex = 2;
+			this.tbRefresh.TextAlign = HorizontalAlignment.Right;
+			this.tbRefresh.Leave += new System.EventHandler(tbRefresh_Leave);
+
+			// 
+			// lbCallsign
+			// 
+			this.lbCallsign = NewLabelAt("Callsign");
+
+			this.tbCallsign = NewTextAt(true);
+			this.tbCallsign.TabIndex = 3;
+			this.tbCallsign.TextChanged += new System.EventHandler(this.tbCallsign_TextChanged);
+			this.tbCallsign.Leave += new System.EventHandler(this.tbCallsign_Leave);
+
+			// 
+			// lbPilotName
+			// 
+			this.lbPilotName = NewLabelAt("Pilot Name");
+			this.tbPilotName = NewTextAt(true);
+			this.tbPilotName.TabIndex = 4;
+			this.tbPilotName.TextChanged += new System.EventHandler(this.tbPilotName_TextChanged);
+			this.tbPilotName.Leave += new System.EventHandler(this.tbPilotName_Leave);
+
+			// lbGroupName
+			this.lbGroupName = NewLabelAt("Group Name");
+			this.tbGroupName = NewTextAt(true);
+			this.tbGroupName.TabIndex = 5;
+			this.tbGroupName.TextChanged += new System.EventHandler(tbGroupName_TextChanged);
+			this.tbGroupName.Leave += new System.EventHandler(tbGroupName_Leave);
+
 			// 
 			// cbMSFSServer
 			// 
@@ -100,34 +130,8 @@ namespace VirtualFlightOnlineTransmitter
 			this.cbMSFSServer.Font = FONT;
 			this.cbMSFSServer.FormattingEnabled = true;
 			this.cbMSFSServer.Items.AddRange(new object[] { "NORTH EUROPE", "WEST EUROPE", "EAST USA", "WEST USA", "SOUTH EAST ASIA" });
-			this.cbMSFSServer.TabIndex = 5;
+			this.cbMSFSServer.TabIndex = 6;
 			this.cbMSFSServer.SelectedIndexChanged += new System.EventHandler(this.cbMSFSServer_SelectedIndexChanged);
-			// 
-			// lbCallsign
-			// 
-			this.lbCallsign = NewLabelAt("Callsign");
-
-			this.tbCallsign = NewTextAt(true);
-			this.tbCallsign.TabIndex = 2;
-			this.tbCallsign.TextChanged += new System.EventHandler(this.tbCallsign_TextChanged);
-			this.tbCallsign.Leave += new System.EventHandler(this.tbCallsign_Leave);
-			// 
-			// lbPilotName
-			// 
-			this.lbPilotName = NewLabelAt("Pilot Name");
-
-			this.tbPilotName = NewTextAt(true);
-			this.tbPilotName.TabIndex = 3;
-			this.tbPilotName.TextChanged += new System.EventHandler(this.tbPilotName_TextChanged);
-			this.tbPilotName.Leave += new System.EventHandler(this.tbPilotName_Leave);
-
-			// lbGroupName
-			this.lbGroupName = NewLabelAt("Group Name");
-
-			this.tbGroupName = NewTextAt(true);
-			this.tbGroupName.TabIndex = 4;
-			this.tbGroupName.TextChanged += new System.EventHandler(tbGroupName_TextChanged);
-			this.tbGroupName.Leave += new System.EventHandler(tbGroupName_Leave);
 
 			// lbNotes
 			this.lbNotes = NewLabelAt("Notes");
@@ -136,17 +140,9 @@ namespace VirtualFlightOnlineTransmitter
 			this.tbNotes.MaxLength = 1024;
 			this.tbNotes.Multiline = true;
 			this.tbNotes.ScrollBars = ScrollBars.Vertical;
-			this.tbNotes.TabIndex = 6;
+			this.tbNotes.TabIndex = 7;
 			this.tbNotes.TextChanged += new System.EventHandler(tbNotes_TextChanged);
 			this.tbNotes.Leave += new System.EventHandler(tbNotes_Leave);
-
-			// Refresh rate
-			this.lbRefresh = NewLabelAt("Send every ms");
-
-			this.tbRefresh = NewTextAt(true);
-			this.tbRefresh.TabIndex = 7;
-			this.tbRefresh.TextChanged += new System.EventHandler(tbRefresh_TextChanged);
-			this.tbRefresh.Leave += new System.EventHandler(tbRefresh_Leave);
 
 			// 
 			// btnConnect
@@ -165,10 +161,13 @@ namespace VirtualFlightOnlineTransmitter
 			this.btnDisconnect.Enabled = false;
 
 			// tsslMain - Information at buttom
-			this.tsslMain.Name = "tsslMain";
+			this.tsslMain = new ToolStripStatusLabel();
+			this.tsslMain.Font = FONT;
 			this.tsslMain.Size = new Size(16, 17);
 			this.tsslMain.Text = "";
 			// ssMain
+			this.ssMain = new StatusStrip();
+			this.ssMain.SuspendLayout();
 			this.ssMain.ImageScalingSize = new Size(24, 24);
 			this.ssMain.Items.AddRange(new ToolStripItem[] { this.tsslMain });
 			this.ssMain.TabIndex = 5;
@@ -216,7 +215,7 @@ namespace VirtualFlightOnlineTransmitter
 			int tLine = 23;
 			SetLayout(lbServer, xLabel, tLine, 63, hLabel); SetLayout(tbServerURL, xBox, tLine - 4, wBox, hBox); tLine += 28;
 			SetLayout(lbPin, xLabel, tLine, 22, hLabel); SetLayout(tbPin, xBox, tLine - 4, 51, hBox);
-			SetLayout(lbRefresh, xBox + 55, tLine, 80, hLabel); SetLayout(tbRefresh, xBox + 145, tLine - 4, 100, hBox); tLine += 28;
+			SetLayout(lbRefresh, xBox + 142, tLine, 80, hLabel); SetLayout(tbRefresh, xBox + 247, tLine - 4, 60, hBox); tLine += 28;
 
 			SetLayout(lbCallsign, xLabel, tLine, 43, hLabel); SetLayout(tbCallsign, xBox, tLine - 4, wBox, hBox); tLine += 28;
 			SetLayout(lbPilotName, xLabel, tLine, 58, hLabel); SetLayout(tbPilotName, xBox, tLine - 4, wBox, hBox); tLine += 28;

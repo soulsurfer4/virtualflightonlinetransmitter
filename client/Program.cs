@@ -56,22 +56,17 @@ namespace VirtualFlightOnlineTransmitter
 		[STAThread]
 		static void Main(string[] args)
 		{
-			bool debug = false;
+			string debug = "";
 			if (args.Length > 0)
 			{
-				debug = "debug" == args[0];
-				Console.WriteLine("debugging on " + args[0]);
-			}
-			else
-			{
-				Console.WriteLine("no debugging " + args);
+				debug = args[0];
 			}
 			SingleInstance.Start(frmMain.Id, frmMain.Application_Title, () =>
 			{
 				Application.EnableVisualStyles();
 				Application.SetCompatibleTextRenderingDefault(false);
 
-				Application.Run(new frmMain(true));
+				Application.Run(new frmMain(debug));
 			}
 			);
 		}
