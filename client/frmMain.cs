@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 using CTrue.FsConnect;
+using VirtualFlightOnlineTransmitter.Properties;
 
 namespace VirtualFlightOnlineTransmitter
 {
@@ -25,7 +26,6 @@ namespace VirtualFlightOnlineTransmitter
 		public delegate void DataReceivedEventHandler(string aircraft_type, double latitude, double longitude, double alititude,
 																									double heading, double airspeed, double groundspeed, double touchdown_velocity,
 																									string transponder_code);
-		public event DataReceivedEventHandler DataReceivedEvent;
 
 		/// <summary>FSConnect library to communicate with the flight simulator</summary>
 		private FsConnect flightSimulatorConnection;
@@ -39,7 +39,7 @@ namespace VirtualFlightOnlineTransmitter
 		}
 
 		public const string Id = "as49d216-e00f4-4a63-b73c-f62c1144b54242";
-		public const string Application_Title = "VirtualFlightTransmitter - v1.0.1.21";
+		public const string Application_Title = "VirtualFlightTransmitter - ";
 
 		private bool fakeFsConnectForDebug = false;
 		private bool fakeFsConnected = false;
@@ -50,6 +50,7 @@ namespace VirtualFlightOnlineTransmitter
 
 		private static int REFRESH_MILLIS_MIN = 3000;
 		private static int TICK_MILLIS = 200; // check State every 100ms
+		private static long timeToSendAgain = 0;
 		private int count = 0;
 
 		/// <summary>Constructor for the Form</summary>
@@ -62,8 +63,6 @@ namespace VirtualFlightOnlineTransmitter
 			InitializeComponent();
 			// Disable illegal cross thread calls warnings
 			Control.CheckForIllegalCrossThreadCalls = false;
-			// Attach an event reveiver to the data received event
-			this.DataReceivedEvent += HandleDataReceived;
 		}
 
 		/// <summary>Event loading the form reads Properties </summary>
@@ -128,7 +127,7 @@ namespace VirtualFlightOnlineTransmitter
 				else
 				{
 					WriteLine("RequestFlightData, connected: " + flightSimulatorConnection.Connected
-																							+ ", paused: " + flightSimulatorConnection.Paused );
+															    		+ ", paused: " + flightSimulatorConnection.Paused );
 					if (flightSimulatorConnection.Paused)
 					{
 						count = 0;
@@ -144,7 +143,7 @@ namespace VirtualFlightOnlineTransmitter
 					else
 					{
 						count = 0;
-						state = State.Broken;
+						state = State.Breaking;
 						SetMessage("Sim gone?");
 					}
 				}
@@ -153,7 +152,7 @@ namespace VirtualFlightOnlineTransmitter
 			{
 				WriteLine("RequestFlightData failed: " + ex.Message);
 				count = 0;
-				state = State.Broken;
+				state = State.Breaking;
 				SetMessage("Data error");
 			}
 		}
@@ -168,7 +167,8 @@ namespace VirtualFlightOnlineTransmitter
 				if (count > Properties.Settings.Default.RefreshMillis / TICK_MILLIS)
 				{
 					// Mmmhh... that takes too long I'm giving up
-					state = State.Broken;
+					state = State.Breaking;
+					count = 0;
 				}
 			}
 		}
@@ -188,10 +188,11 @@ namespace VirtualFlightOnlineTransmitter
 			double touchdown_velocity = 1.0;
 			string transponder_code = "42";
 
+			this.HandleDataReceived(aircraft_type, latitude, longitude, altitude, heading, airspeed,
+															groundspeed, touchdown_velocity, transponder_code);
+
 			this.SendDataToServer(aircraft_type, latitude, longitude, heading, altitude,
 															airspeed, groundspeed, touchdown_velocity, transponder_code.ToString());
-			this.DataReceivedEvent(aircraft_type, latitude, longitude, altitude, heading, airspeed,
-															groundspeed, touchdown_velocity, transponder_code);
 		}
 
 
@@ -204,13 +205,12 @@ namespace VirtualFlightOnlineTransmitter
 				state = nextState;
 				count = 0;
 			}
-			string tickle = tsslMain.Text;
+			/*string tickle = tsslMain.Text;
 			if (tickle.Substring(tickle.Length - 1) != "+")
 				tsslMain.Text = tickle + "+";
 			else
 				tsslMain.Text = tickle.Substring(0, tickle.Length - 1);
-			
-
+			*/
 		}
 
 		/// <summary>Handler to receive information from SimConnect</summary>
@@ -223,30 +223,36 @@ namespace VirtualFlightOnlineTransmitter
 				if (e.RequestId == (uint)Requests.PlaneInfoRequest)
 				{
 					state = State.Waiting;
-					WriteLine("Recieved flight data ");
-					PlaneInfoResponse r = (PlaneInfoResponse)e.Data.FirstOrDefault();
+					WriteLine("Received flight data ");
+					PlaneInfoResponse  r = (PlaneInfoResponse)e.Data.FirstOrDefault();
 					string aircraft_type = r.Title;
-					double latitude = r.PlaneLatitude;
-					double longitude = r.PlaneLongitude;
-					double altitude = r.IndicatedAltitude;
-					double heading = r.PlaneHeadingDegreesTrue;
-					double airspeed = r.AirspeedIndicated;
-					double groundspeed = r.GpsGroundSpeed;
+					double latitude      = r.PlaneLatitude;
+					double longitude     = r.PlaneLongitude;
+					double altitude      = r.IndicatedAltitude;
+					double heading       = r.PlaneHeadingDegreesTrue;
+					double airspeed      = r.AirspeedIndicated;
+					double groundspeed   = r.GpsGroundSpeed;
 					double touchdown_velocity = r.PlaneTouchdownNormalVelocity;
 
 					dataReceived = true;
 					SetMessage("Data ok");
-
-					// TODO - look into why TransponderCode doesn't come back from the simvars
-					String transponder_code = Bcd.Bcd2Dec(r.TransponderCode).ToString();
-					this.DataReceivedEvent(aircraft_type, latitude, longitude, altitude, heading, airspeed,
-																	groundspeed, touchdown_velocity, transponder_code);
-					this.SendDataToServer(aircraft_type, latitude, longitude, heading, altitude,
-																 airspeed, groundspeed, touchdown_velocity, transponder_code);
+					long timestamp = DateTime.Now.Ticks;
+					if (timestamp > timeToSendAgain)
+					{
+						// TODO - look into why TransponderCode doesn't come back from the simvars
+						String transponder_code = Bcd.Bcd2Dec(r.TransponderCode).ToString();
+						this.HandleDataReceived(aircraft_type, latitude, longitude, altitude, heading, airspeed,
+																		groundspeed, touchdown_velocity, transponder_code);
+						this.SendDataToServer(aircraft_type, latitude, longitude, heading, altitude,
+																	 airspeed, groundspeed, touchdown_velocity, transponder_code);
+						timeToSendAgain = timestamp + Properties.Settings.Default.RefreshMillis;
+					} else {
+						WriteLine("Skipped sending received flight data ");
+					}
 				}
 				else
 				{
-					WriteLine("Recieved data type: " + e.RequestId);
+					WriteLine("Received data type: " + e.RequestId);
 				}
 			}
 			catch (Exception ex)
@@ -336,7 +342,7 @@ namespace VirtualFlightOnlineTransmitter
 							result = reader.ReadToEnd();
 							dataSendOkay = true;
 							SetMessage("Data send");
-							WriteLine("SendDataToServer: " + result);
+							WriteLine("SendDataToServer: " + url);
 						}
 					}
 				}
@@ -365,12 +371,11 @@ namespace VirtualFlightOnlineTransmitter
 			dataReceived = false;
 			dataSendOkay = false;
 			count = 0;
-
+			tbRefresh_Leave(this,null);
 			// first check if the default parameters have been changed, check if the parameters are empty
 			if (tbCallsign.Text == "Your Callsign" || tbCallsign.Text == string.Empty ||
 					tbPilotName.Text == "Your Name" || tbPilotName.Text == string.Empty ||
-					tbGroupName.Text == string.Empty || tbServerURL.Text == string.Empty ||
-					Properties.Settings.Default.RefreshMillis < 1000)
+					tbGroupName.Text == string.Empty || tbServerURL.Text == string.Empty )
 			{
 				MessageBox.Show("It looks like you haven't changed your server, callsign, name or groupname yet.\n " +
 												"Please set them properly before connecting.",
@@ -428,7 +433,6 @@ namespace VirtualFlightOnlineTransmitter
 			}
 		}
 
-
 		/// <summary>Helper method to disconnect from SimConnect and update the interface appropriately</summary>
 		private void Breaking()
 		{
@@ -465,7 +469,7 @@ namespace VirtualFlightOnlineTransmitter
 
 		void SetMessage(string message)
 		{
-			string text = "Simu: " + (IsFsConnected() ? "ON" : "--") +
+			string text =   "Sim: " + (IsFsConnected() ? "ON" : "--") +
 									" | Data: " + (dataReceived ? "OK" : "--") +
 									" | Serv: " + (dataSendOkay ? "OK" : "--") +
 									" | " + message;

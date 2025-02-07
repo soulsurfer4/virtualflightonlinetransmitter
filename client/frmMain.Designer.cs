@@ -386,7 +386,7 @@ namespace VirtualFlightOnlineTransmitter
 			this.Icon = ((Icon)(resources.GetObject("$this.Icon")));
 			this.MainMenuStrip = this.mnuMain;
 			this.Name = "frmMain";
-			this.Text = frmMain.Application_Title;
+			this.Text = frmMain.Application_Title + System.Windows.Forms.Application.ProductVersion;
 			this.FormClosing += new FormClosingEventHandler(this.Main_FormClosing);
 			this.Load += new System.EventHandler(this.Main_Load);
 
