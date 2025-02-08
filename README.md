@@ -1,5 +1,19 @@
 # Virtual Flight Online Transmitter
 
+## Changes to the original
+ * when starting the transmitter ahead of the flight simulator, the FsConnect finds the simluator with state "Connected" = false
+   
+   * in this phase, each try to connect the simulator adds another listener
+   * with multiple listeners added the "one" request for flight data will be answered multiple times
+   * every answer has the same flight data and is send to the server
+
+ * when disconnecting the transmitter from the simulator the prior added listener hasn't been removed
+   * so each "disconnect / connect" cycle added another listener, which leads to the same result as above
+
+ * the time to send the data can be set (from 3000ms and above)
+ * the status line shows other information, like if the simulator is paused
+ * the "autoConnect" feature has been removed while testing, but automatic reconnect works once the button "Turn On" has been pressed
+
 ## Where do I download the Transmitter installer from?
 
 In the right margin, there is a link to the most recent release:
