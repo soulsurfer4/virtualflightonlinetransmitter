@@ -1,16 +1,13 @@
 ﻿using System;
-using System.Deployment.Application;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 using CTrue.FsConnect;
-using VirtualFlightOnlineTransmitter.Properties;
+using static System.Net.WebRequestMethods;
 
 namespace VirtualFlightOnlineTransmitter
 {
@@ -103,12 +100,13 @@ namespace VirtualFlightOnlineTransmitter
 				case State.Off: SetMessage("Off"); break;
 
 				case State.On        : Connect(); break;
-				case State.Connecting: AwaitResponse(); break; // wait to be connected
+				case State.Connecting: Waiting(State.Breaking); break; // wait to be connected
 				case State.Breaking  : Breaking(); break;
 				case State.Broken    : Waiting(State.On); break;
 
 				case State.Connected: RequestFlightData(); break;
-				case State.Receiving: Receiving(); break;
+				case State.Receiving: Waiting(State.Breaking); break;
+
 				case State.Waiting  : Waiting(State.Connected); break;
 			}
 		}
@@ -126,7 +124,7 @@ namespace VirtualFlightOnlineTransmitter
 				}
 				else
 				{
-					WriteLine("RequestFlightData, connected: " + flightSimulatorConnection.Connected
+					WriteLine("RequestFlightData, Sim connected: " + flightSimulatorConnection.Connected
 															    		+ ", paused: " + flightSimulatorConnection.Paused );
 					if (flightSimulatorConnection.Paused)
 					{
@@ -142,9 +140,11 @@ namespace VirtualFlightOnlineTransmitter
 					}
 					else
 					{
-						count = 0;
+						// 07.02.2025 19:18:14: RequestFlightData, connected: False, paused: False
 						state = State.Breaking;
+						// 07.02.2025 19:19:15: Disconnected from Sim
 						SetMessage("Sim gone?");
+						WriteLine("Sim gone?" );
 					}
 				}
 			}
@@ -157,60 +157,27 @@ namespace VirtualFlightOnlineTransmitter
 			}
 		}
 
-		private void Receiving()
-		{
-			if (fakeFsConnectForDebug && fakeFsConnected)
-				FakeFlightData();
-			else
-			{
-				count++;
-				if (count > Properties.Settings.Default.RefreshMillis / TICK_MILLIS)
-				{
-					// Mmmhh... that takes too long I'm giving up
-					state = State.Breaking;
-					count = 0;
-				}
-			}
-		}
-
-		private void FakeFlightData()
-		{
-			dataReceived = true;
-			state = State.Waiting;
-			Random rnd = new Random();
-			string aircraft_type = "Cessna";
-			double latitude = 53.0 + rnd.NextDouble() / 10.0;
-			double longitude = 10.0 + rnd.NextDouble() / 10.0;
-			double altitude = 200.0 + rnd.NextDouble() * 20.0;
-			double heading = 90.0 + rnd.NextDouble() * 5.0;
-			double airspeed = 100.0 + rnd.NextDouble() * 20.0;
-			double groundspeed = 160.0;
-			double touchdown_velocity = 1.0;
-			string transponder_code = "42";
-
-			this.HandleDataReceived(aircraft_type, latitude, longitude, altitude, heading, airspeed,
-															groundspeed, touchdown_velocity, transponder_code);
-
-			this.SendDataToServer(aircraft_type, latitude, longitude, heading, altitude,
-															airspeed, groundspeed, touchdown_velocity, transponder_code.ToString());
-		}
-
-
 		private void Waiting(State nextState)
 		{
 			count++;
-			if (count > Properties.Settings.Default.RefreshMillis / TICK_MILLIS)
-			{
+			if (TimeIsUp()) { 
 				WriteLine("Waiting done: " + state + " -> " + nextState);
 				state = nextState;
 				count = 0;
 			}
-			/*string tickle = tsslMain.Text;
-			if (tickle.Substring(tickle.Length - 1) != "+")
-				tsslMain.Text = tickle + "+";
-			else
-				tsslMain.Text = tickle.Substring(0, tickle.Length - 1);
-			*/
+		}
+
+		private Boolean TimeIsUp()
+		{
+			return count > Properties.Settings.Default.RefreshMillis / TICK_MILLIS;
+		}
+
+		private void Breaking()
+		{
+			Disconnect();
+			// 07.02.2025 19:18:14: RequestFlightData, connected: False, paused: False
+			// 07.02.2025 19:19:15: Disconnected from Sim
+			state = State.Broken; // hat gefehlt für Neustart
 		}
 
 		/// <summary>Handler to receive information from SimConnect</summary>
@@ -299,8 +266,6 @@ namespace VirtualFlightOnlineTransmitter
 			string result = "";
 			string notes = Properties.Settings.Default.Notes;
 			string version = System.Windows.Forms.Application.ProductVersion;
-			WriteLine("SendingDataToServer: now ...");
-
 			try
 			{
 				dataSendOkay = false;
@@ -349,7 +314,7 @@ namespace VirtualFlightOnlineTransmitter
 			}
 			catch (Exception ex)
 			{
-				WriteLine("Server response: " + ex.Message);
+				WriteLine("Server Error response: " + ex.Message);
 				SetMessage("SERVER Down");
 			}
 			return result;
@@ -362,20 +327,14 @@ namespace VirtualFlightOnlineTransmitter
 		}
 
 		/// <summary>Helper method to connect to SimConnect and update the interface appropriately</summary>
-		private void Connect()
+		private void UserConnect()
 		{
-			if (state != State.On || state == State.Connected)
-				return;
-
-			state = State.Connecting;
-			dataReceived = false;
-			dataSendOkay = false;
-			count = 0;
-			tbRefresh_Leave(this,null);
+			WriteLine("Button Connect");
+			tbRefresh_Leave(this, null);
 			// first check if the default parameters have been changed, check if the parameters are empty
 			if (tbCallsign.Text == "Your Callsign" || tbCallsign.Text == string.Empty ||
 					tbPilotName.Text == "Your Name" || tbPilotName.Text == string.Empty ||
-					tbGroupName.Text == string.Empty || tbServerURL.Text == string.Empty )
+					tbGroupName.Text == string.Empty || tbServerURL.Text == string.Empty)
 			{
 				MessageBox.Show("It looks like you haven't changed your server, callsign, name or groupname yet.\n " +
 												"Please set them properly before connecting.",
@@ -385,9 +344,16 @@ namespace VirtualFlightOnlineTransmitter
 				SetMessage("Off");
 				return;
 			}
+		}
+
+		private void Connect() {
+			dataReceived = false;
+			dataSendOkay = false;
+			count = 0;
 			// Disable the textboxes
 			EnableTextBoxes(false);
 			SetMessage("Sim Connecting...");
+			state = State.Connecting;
 
 			this.ConnectionStartTime = DateTime.Now;
 			if (fakeFsConnectForDebug)
@@ -404,37 +370,42 @@ namespace VirtualFlightOnlineTransmitter
 					if (flightSimulatorConnection == null)
 					{
 						this.flightSimulatorConnection = new FsConnect();
+						WriteLine("Creating new FsConnector");
 					}
-					this.flightSimulatorConnection.Connect("VirtualFlightOnlineClient");
+					flightSimulatorConnection.Connect("VirtualFlightOnlineClient");
 					this.planeInfoDefinitionId = this.flightSimulatorConnection.RegisterDataDefinition<PlaneInfoResponse>();
 
 					// Attach event handler
 					this.flightSimulatorConnection.FsDataReceived += this.HandleReceivedFsData;
 
-					SetMessage(" ");
+					SetMessage("...");
 					state = State.Connected;
-					WriteLine("Connected to Sim OKAY" );
+					WriteLine(flightSimulatorConnection.ConnectionInfo.ApplicationVersion + " OKAY. " 
+										+ " Connected " + flightSimulatorConnection.Connected 
+										  + ", Paused " + flightSimulatorConnection.Paused );
 				}
 				catch (Exception ex)
 				{
-					WriteLine("Connect to Sim failed: " + ex.Message); 
+					WriteLine("Connect to Sim failed: " + ex.Message);
+					this.flightSimulatorConnection.Dispose();
+					this.flightSimulatorConnection = null;
 					state = State.Broken;
 					count = 0;
 				}
 			}
 		}
 
-		private void AwaitResponse()
+		private void UserDisconnect()
 		{
-			if (fakeFsConnectForDebug && fakeFsConnected)
-			{
-				state = State.Connected;
-				fakeFsConnected = true;
-			}
+			WriteLine("Button Disconnect");
+			state = State.Off;
+			Disconnect();
+			// switch the UI components back on
+			EnableTextBoxes(true);
 		}
 
 		/// <summary>Helper method to disconnect from SimConnect and update the interface appropriately</summary>
-		private void Breaking()
+		private void Disconnect()
 		{
 			dataReceived = false;
 			dataSendOkay = false;
@@ -449,22 +420,13 @@ namespace VirtualFlightOnlineTransmitter
 				{
 					flightSimulatorConnection.FsDataReceived -= this.HandleReceivedFsData;
 					flightSimulatorConnection.Disconnect();
-					WriteLine("Disconnected from Sim");
+					WriteLine("Breaking: Disconnected from Sim");
 				}
 			}
 			catch (Exception ex)
 			{
-				WriteLine("Disconnect: " + ex.Message);
+				WriteLine("Disconnect Error: " + ex.Message);
 			}
-		}
-
-		private void Disconnect()
-		{
-			state = State.Off;
-			Breaking();
-			// switch the UI components back on
-			state = State.Off;
-			EnableTextBoxes(true);
 		}
 
 		void SetMessage(string message)
@@ -482,7 +444,7 @@ namespace VirtualFlightOnlineTransmitter
 		{
 			if (writeFileLog)
 			{
-				using (StreamWriter w = File.AppendText("transmitter.log"))
+				using (StreamWriter w = System.IO.File.AppendText("transmitter.log"))
 				{
 					w.WriteLine(DateTime.Now + ": " + line);
 				}
@@ -536,13 +498,12 @@ namespace VirtualFlightOnlineTransmitter
 
 		private void btnConnect_Click(object sender, EventArgs e)
 		{
-			state = State.On;
+			UserConnect();
 		}
 
 		private void btnDisconnect_Click(object sender, EventArgs e)
 		{
-			state = State.Off;
-			Disconnect();
+			UserDisconnect();
 		}
 
 		/// <summary>last actions on closing of the form</summary>
@@ -550,6 +511,7 @@ namespace VirtualFlightOnlineTransmitter
 		/// <param name="e"></param>
 		private void Main_FormClosing(object sender, FormClosingEventArgs e)
 		{
+			WriteLine("Form closing");
 			// If the simulator is connected, ask the user if they really want to close Transmitter
 			if (IsFsConnected())
 			{
@@ -670,8 +632,14 @@ namespace VirtualFlightOnlineTransmitter
 		/// <param name="e"></param>
 		private void exitToolStripMenuItem1_Click(object sender, EventArgs e)
 		{
+			WriteLine("Menu > exit");
 			Disconnect();
-			state = State.Off;
+			if (flightSimulatorConnection != null)
+			{
+				flightSimulatorConnection.Dispose();
+				flightSimulatorConnection = null;
+			}
+		
 			// close the application
 			this.Close();
 		}
@@ -746,6 +714,29 @@ namespace VirtualFlightOnlineTransmitter
 			// TODO - look into why TransponderCode doesn't come back from the simvars :)
 			[SimVar(NameId = FsSimVar.TransponderCode, UnitId = FsUnit.Bco16)]
 			public uint TransponderCode;
+		}
+
+
+		private void FakeFlightData()
+		{
+			dataReceived = true;
+			state = State.Waiting;
+			Random rnd = new Random();
+			string aircraft_type = "Cessna";
+			double latitude = 53.0 + rnd.NextDouble() / 10.0;
+			double longitude = 10.0 + rnd.NextDouble() / 10.0;
+			double altitude = 200.0 + rnd.NextDouble() * 20.0;
+			double heading = 90.0 + rnd.NextDouble() * 5.0;
+			double airspeed = 100.0 + rnd.NextDouble() * 20.0;
+			double groundspeed = 160.0;
+			double touchdown_velocity = 1.0;
+			string transponder_code = "42";
+
+			this.HandleDataReceived(aircraft_type, latitude, longitude, altitude, heading, airspeed,
+															groundspeed, touchdown_velocity, transponder_code);
+
+			this.SendDataToServer(aircraft_type, latitude, longitude, heading, altitude,
+															airspeed, groundspeed, touchdown_velocity, transponder_code.ToString());
 		}
 	}
 }
