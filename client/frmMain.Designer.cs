@@ -73,7 +73,7 @@ namespace VirtualFlightOnlineTransmitter
 			this.tbServerURL = NewTextAt(true);
 			this.tbServerURL.TabIndex = 0;
 			this.tbServerURL.TextChanged += new System.EventHandler(this.tbServerURL_TextChanged);
-			this.tbServerURL.Leave += new System.EventHandler(this.tbServerURL_Leave);
+
 
 			// 
 			// tbPin
@@ -84,7 +84,6 @@ namespace VirtualFlightOnlineTransmitter
 			this.tbPin.PasswordChar = '*';
 			this.tbPin.TabIndex = 1;
 			this.tbPin.TextChanged += new System.EventHandler(this.tbPin_TextChanged);
-			this.tbPin.Leave += new System.EventHandler(this.tbPin_Leave);
 
 			// Refresh rate
 			this.lbRefresh = NewLabelAt("Send every ms");
@@ -102,7 +101,6 @@ namespace VirtualFlightOnlineTransmitter
 			this.tbCallsign = NewTextAt(true);
 			this.tbCallsign.TabIndex = 3;
 			this.tbCallsign.TextChanged += new System.EventHandler(this.tbCallsign_TextChanged);
-			this.tbCallsign.Leave += new System.EventHandler(this.tbCallsign_Leave);
 
 			// 
 			// lbPilotName
@@ -111,14 +109,12 @@ namespace VirtualFlightOnlineTransmitter
 			this.tbPilotName = NewTextAt(true);
 			this.tbPilotName.TabIndex = 4;
 			this.tbPilotName.TextChanged += new System.EventHandler(this.tbPilotName_TextChanged);
-			this.tbPilotName.Leave += new System.EventHandler(this.tbPilotName_Leave);
 
 			// lbGroupName
 			this.lbGroupName = NewLabelAt("Group Name");
 			this.tbGroupName = NewTextAt(true);
 			this.tbGroupName.TabIndex = 5;
 			this.tbGroupName.TextChanged += new System.EventHandler(tbGroupName_TextChanged);
-			this.tbGroupName.Leave += new System.EventHandler(tbGroupName_Leave);
 
 			// 
 			// cbMSFSServer
@@ -142,7 +138,6 @@ namespace VirtualFlightOnlineTransmitter
 			this.tbNotes.ScrollBars = ScrollBars.Vertical;
 			this.tbNotes.TabIndex = 7;
 			this.tbNotes.TextChanged += new System.EventHandler(tbNotes_TextChanged);
-			this.tbNotes.Leave += new System.EventHandler(tbNotes_Leave);
 
 			// 
 			// btnConnect

@@ -142,5 +142,17 @@ namespace VirtualFlightOnlineTransmitter.Properties {
                 this["RefreshMillis"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string MagicArgs {
+            get {
+                return ((string)(this["MagicArgs"]));
+            }
+            set {
+                this["MagicArgs"] = value;
+            }
+        }
     }
 }
