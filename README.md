@@ -11,8 +11,20 @@
    * so each "disconnect / connect" cycle added another listener, which leads to the same result as above
 
  * the time to send the data can be set (from 3000ms and above)
- * the status line shows other information, like if the simulator is paused
+ 
+ * the status line shows other information, like simulator version and if the simulator is paused, 
+ 
  * the "autoConnect" feature has been removed while testing, but automatic reconnect works once the button "Turn On" has been pressed
+ 
+ * additionally the Transmitter.exe can only be started once
+ 
+ * a log file can be written by adding the command line parameter
+   * "log"  for details and 
+   * "loglite" for only simulator state changes 
+   
+ * and two magic command line features
+   * "ichbinzufauldenconnectbuttonzudrücken"
+   * "ichbinzufauldentransmitterzuschließen"
 
 ## Where do I download the Transmitter installer from?
 
