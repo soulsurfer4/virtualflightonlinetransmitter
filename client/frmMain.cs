@@ -214,6 +214,8 @@ namespace VirtualFlightOnlineTransmitter
 				{
 					LogInfo("Sim Version: '" + simVersion + "' => '" + newVersion + "', Sim state " + simState + " => " + newState);
 					simState = newState;
+					simPaused = fsConnector.Paused;
+					simConnected = fsConnector.Connected;
 					if (newVersion != null && newVersion != "") simVersion = newVersion;
 				}
 			}
@@ -242,17 +244,23 @@ namespace VirtualFlightOnlineTransmitter
 					dataReceived = true;
 					SetMessage("Data ok");
 					long timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-					if (timestamp > timeToSendAgain)
+					if (timestamp < timeToSendAgain)
+					{
+						LogDebug("Skipped sending received flight data");
+					}
+					else
 					{
 						timeToSendAgain = timestamp + Properties.Settings.Default.RefreshMillis;
+
 						// TODO - look into why TransponderCode doesn't come back from the simvars
 						String transponder_code = Bcd.Bcd2Dec(r.TransponderCode).ToString();
+						// convert ground speed from metres per second to knots
+						groundspeed = groundspeed * 1.94384449;
+
 						this.HandleDataReceived(aircraft_type, latitude, longitude, altitude, heading, airspeed,
 																		groundspeed, touchdown_velocity, transponder_code);
 						this.SendDataToServer(aircraft_type, latitude, longitude, heading, altitude,
 																	 airspeed, groundspeed, touchdown_velocity, transponder_code);
-					} else {
-						LogDebug("Skipped sending received flight data");
 					}
 				}
 				else
@@ -275,9 +283,6 @@ namespace VirtualFlightOnlineTransmitter
 		/// <param name="airspeed"></param>
 		public void HandleDataReceived(string aircraft_type, double latitude, double longitude, double altitude, double heading, double airspeed, double groundspeed, double touchdown_velocity, string transponder_code)
 		{
-			// convert ground speed from metres per second to knots
-			groundspeed = groundspeed * 1.94384449;
-
 			// Update the Screen   
 			this.tbAircraftType.Text = aircraft_type;
 			this.tbLatitude.Text = LatitudeToString(latitude);
@@ -311,26 +316,27 @@ namespace VirtualFlightOnlineTransmitter
 				// force the numbers into USA format
 				CultureInfo usa_format = new CultureInfo("en-US");
 				string fixedData =
-							"Callsign=" + Properties.Settings.Default.Callsign
-						+ "&PilotName=" + Properties.Settings.Default.PilotName
-						+ "&GroupName=" + Properties.Settings.Default.GroupName
+							"Callsign="    + Properties.Settings.Default.Callsign
+						+ "&PilotName="  + Properties.Settings.Default.PilotName
+						+ "&GroupName="  + Properties.Settings.Default.GroupName
 						+ "&MSFSServer=" + Properties.Settings.Default.MSFSServer
-						+ "&Pin=" + Properties.Settings.Default.Pin
-						+ "&Notes=" + WebUtility.UrlEncode(notes)
-						+ "&Version=" + version;
+						+ "&Pin="        + Properties.Settings.Default.Pin
+						+ "&Version="    + version;
+				if (notes != null && notes.Trim().Length > 0)
+					fixedData += "&Notes=" + WebUtility.UrlEncode(notes);
 
-				string url = Properties.Settings.Default.ServerURL + "?"
+					string url = Properties.Settings.Default.ServerURL + "?"
 						+ fixedData
 						// dynamic data from MSFS
 						+ "&AircraftType=" + aircraft_type.ToString()
-						+ "&Latitude=" + latitude.ToString(usa_format)
-						+ "&Longitude=" + longitude.ToString(usa_format)
-						+ "&Altitude=" + altitude.ToString(usa_format)
-						+ "&Airspeed=" + airspeed.ToString(usa_format)
-						+ "&Groundspeed=" + groundspeed.ToString(usa_format)
-						+ "&Heading=" + heading.ToString(usa_format)
+						+ "&Latitude="     + latitude.ToString(usa_format)
+						+ "&Longitude="    + longitude.ToString(usa_format)
+						+ "&Altitude="     + altitude.ToString(usa_format)
+						+ "&Airspeed="     + airspeed.ToString(usa_format)
+						+ "&Groundspeed="  + groundspeed.ToString(usa_format)
+						+ "&Heading="      + heading.ToString(usa_format)
 						+ "&TouchdownVelocity=" + touchdown_velocity.ToString(usa_format)
-						+ "&TransponderCode=" + transponder_code;
+						+ "&TransponderCode="   + transponder_code;
 
 				var request = WebRequest.Create(url);
 
