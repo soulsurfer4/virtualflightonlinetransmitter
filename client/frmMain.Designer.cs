@@ -8,6 +8,7 @@ using ComboBox = System.Windows.Forms.ComboBox;
 using Button = System.Windows.Forms.Button;
 
 namespace VirtualFlightOnlineTransmitter
+
 {
 	partial class frmMain
 	{

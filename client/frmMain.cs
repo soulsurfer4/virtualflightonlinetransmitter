@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -35,35 +36,53 @@ namespace VirtualFlightOnlineTransmitter
 			PlaneInfoRequest = 0
 		}
 
+
 		public const string Id = "as49d216-e00f4-4a63-b73c-f62c1144b54242";
 		public const string Application_Title = "VirtualFlightTransmitter - ";
+
+		private string PropServerURL;
+		private string PropPin;
+		private int    PropRefreshMillis;
+		private string PropMSFSServer;
+		private string PropCallsign;
+		private string PropPilotName;
+		private string PropGroupName;
+		private string PropNotes;
+		private string PropMagicArgs;
 
 		private bool filelog = false;
 		private bool loglite = false;
 		private bool autoOn = false;
 		private bool autoKill = false;
+		private bool autoKillActivated = false;
 
-		private string simVersion = null;
-		private string simState = null;
-		private bool   simPaused = false;
+		private string simVersion   = null;
+		private string lastSimState = null;
+		private bool   simPaused    = false;
 		private bool   simConnected = false;
-		private bool dataReceived = false;
-		private bool dataSendOkay = false;
+		private bool dataReceived   = false;
+		private bool dataSendOkay   = false;
 
-		private static int REFRESH_MILLIS_MIN = 3000;
-		private static int TICK_MILLIS = 200; // check State every 100ms
+		private static int REFRESH_MILLIS_MIN = 2000;
+		private static int TICK_MILLIS = 200; // check State every 200ms
 		private static long timeToSendAgain = 0;
 		private int count = 0;
 
 		/// <summary>Constructor for the Form</summary>
 		public frmMain(string[] args)
 		{
+			PropLoad();
+			if (PropPilotName == null)
+			{
+				ResetProps();
+			}
 			checkArgs(args);
 
 			state = State.Off;
 			InitializeComponent();
 			// Disable illegal cross thread calls warnings
 			Control.CheckForIllegalCrossThreadCalls = false;
+
 		}
 
 		/// <summary>Event loading the form reads Properties </summary>
@@ -71,25 +90,29 @@ namespace VirtualFlightOnlineTransmitter
 		/// <param name="e"></param>
 		private void Main_Load(object sender, EventArgs e)
 		{
-			int millis = Math.Max(REFRESH_MILLIS_MIN, Properties.Settings.Default.RefreshMillis);
 			// pre-fill the settings boxes with data from properties
-			tbServerURL.Text  = Properties.Settings.Default.ServerURL;
-			tbPin.Text        = Properties.Settings.Default.Pin;
-			tbRefresh.Text    = millis.ToString(); 
-			cbMSFSServer.Text = Properties.Settings.Default.MSFSServer;
-			tbCallsign.Text   = Properties.Settings.Default.Callsign;
-			tbPilotName.Text  = Properties.Settings.Default.PilotName;
-			tbGroupName.Text  = Properties.Settings.Default.GroupName;
-			tbNotes.Text      = Properties.Settings.Default.Notes;
+			checkArgs(PropMagicArgs.Split(','));
 
-			checkArgs(Properties.Settings.Default.MagicArgs.Split(','));
-			WriteLine("Options: log " + filelog + ", autoOn " + autoOn + ", autoKill " + autoKill + ", loglite " + loglite);
+			setPropsToDisplay();
+			LogInfo("Options: log " + filelog + ", autoOn " + autoOn + ", autoKill " + autoKill + ", loglite " + loglite);
 
 			tmrTransmit.Start(); // transmits data every few seconds
 			if (autoOn)
 				UserConnect();
 		}
 
+		private void setPropsToDisplay()
+		{
+			tbServerURL.Text = PropServerURL;
+			tbPin.Text = PropPin;
+			tbRefresh.Text = PropRefreshMillis.ToString();
+			cbMSFSServer.Text = PropMSFSServer;
+			tbCallsign.Text = PropCallsign;
+			tbPilotName.Text = PropPilotName;
+			tbGroupName.Text = PropGroupName;
+			tbNotes.Text = PropNotes;
+
+		}
 		private void checkArgs(string[] args)
 		{
 			foreach (string arg in args)
@@ -97,13 +120,12 @@ namespace VirtualFlightOnlineTransmitter
 				if (arg == null || arg.Length == 0)
 					continue;
 				
-				WriteLine("Startparameter: " + arg);
+				//WriteLine("Startparameter: " + arg);
 				filelog  = filelog  || (arg == "log");
 				loglite  = loglite  || (arg == "loglite");
 				autoOn   = autoOn   || (arg == "ichbinzufauldenconnectbuttonzudrücken");
 				autoKill = autoKill || (arg == "ichbinzufauldentransmitterzuschließen");
 			}
-
 		}
 		// ------------------------------------------------------------------------------------
 		/// <summary>State machine</summary>
@@ -139,25 +161,24 @@ namespace VirtualFlightOnlineTransmitter
 		private void RequestFlightData()
 		{
 			count = 0;
-			dataReceived = false;
 			try
 			{
 				checkSimStateChange();
-				if (fsConnector.Paused)
+				dataReceived = false;
+				state = State.Receiving;
+				if (fsConnector.Connected)
 				{
-					count = 0;
-					state = State.Waiting;
-					SetMessage("Sim paused");
-					LogDebug("Sim is paused, no flight data requested");
-					simState = "zz";
-				}
-				else if (fsConnector.Connected)
-				{
-					state = State.Receiving;
-					SetMessage("Data ...");
-					LogDebug("RequestFlightData");
+					if (fsConnector.Paused)
+					{
+						SetMessage("Sim paused");
+						LogDebug("Sim is paused, requesting flight data anyway");
+					}
+					else
+					{
+						SetMessage("Data ...");
+						LogDebug("requesting flight data");
+					}
 					fsConnector.RequestData((int)Requests.PlaneInfoRequest, this.planeInfoDefinitionId);
-					simState = "ON";
 				}
 				else
 				{
@@ -190,7 +211,7 @@ namespace VirtualFlightOnlineTransmitter
 
 		private Boolean TimeIsUp()
 		{
-			return count > Properties.Settings.Default.RefreshMillis / TICK_MILLIS;
+			return count > PropRefreshMillis / TICK_MILLIS;
 		}
 
 		private void Breaking()
@@ -205,18 +226,25 @@ namespace VirtualFlightOnlineTransmitter
 		{
 			if (fsConnector != null)
 			{
-				string newState = fsConnector.Paused ? "zz" : (fsConnector.Connected ? "ON" : "??");
+				string currState = "??";
+				if (fsConnector.Paused)
+					currState = dataReceived ? "zz" : "xx";
+				else if (fsConnector.Connected)
+					currState = "ON" ;
 				string newVersion = fsConnector.ConnectionInfo.ApplicationVersion;
 
 				if (simVersion != newVersion
 						|| simPaused != fsConnector.Paused
 						|| simConnected != fsConnector.Connected)
 				{
-					LogInfo("Sim Version: '" + simVersion + "' => '" + newVersion + "', Sim state " + simState + " => " + newState);
-					simState = newState;
+					LogInfo("Sim Version: '" + simVersion + "' => '" + newVersion + "', Sim state " + lastSimState + " => " + currState
+						+ ", " + fsConnector.ConnectionInfo.ApplicationName);
+					lastSimState = currState;
 					simPaused = fsConnector.Paused;
 					simConnected = fsConnector.Connected;
-					if (newVersion != null && newVersion != "") simVersion = newVersion;
+					simVersion = newVersion;
+					if (newVersion != null && newVersion != "")
+						autoKillActivated = true;
 				}
 			}
 		}
@@ -250,7 +278,7 @@ namespace VirtualFlightOnlineTransmitter
 					}
 					else
 					{
-						timeToSendAgain = timestamp + Properties.Settings.Default.RefreshMillis;
+						timeToSendAgain = timestamp + PropRefreshMillis;
 
 						// TODO - look into why TransponderCode doesn't come back from the simvars
 						String transponder_code = Bcd.Bcd2Dec(r.TransponderCode).ToString();
@@ -281,7 +309,8 @@ namespace VirtualFlightOnlineTransmitter
 		/// <param name="altitude"></param>
 		/// <param name="heading"></param>
 		/// <param name="airspeed"></param>
-		public void HandleDataReceived(string aircraft_type, double latitude, double longitude, double altitude, double heading, double airspeed, double groundspeed, double touchdown_velocity, string transponder_code)
+		public void HandleDataReceived(string aircraft_type, double latitude, double longitude, double altitude, 
+			double heading, double airspeed, double groundspeed, double touchdown_velocity, string transponder_code)
 		{
 			// Update the Screen   
 			this.tbAircraftType.Text = aircraft_type;
@@ -307,7 +336,7 @@ namespace VirtualFlightOnlineTransmitter
 																	 double touchdown_velocity, string transponder_code)
 		{
 			string result = "";
-			string notes = Properties.Settings.Default.Notes;
+			string notes = PropNotes;
 			string version = System.Windows.Forms.Application.ProductVersion;
 			try
 			{
@@ -316,16 +345,16 @@ namespace VirtualFlightOnlineTransmitter
 				// force the numbers into USA format
 				CultureInfo usa_format = new CultureInfo("en-US");
 				string fixedData =
-							"Callsign="    + Properties.Settings.Default.Callsign
-						+ "&PilotName="  + Properties.Settings.Default.PilotName
-						+ "&GroupName="  + Properties.Settings.Default.GroupName
-						+ "&MSFSServer=" + Properties.Settings.Default.MSFSServer
-						+ "&Pin="        + Properties.Settings.Default.Pin
+							"Callsign="    + PropCallsign
+						+ "&PilotName="  + PropPilotName
+						+ "&GroupName="  + PropGroupName
+						+ "&MSFSServer=" + PropMSFSServer
+						+ "&Pin="        + PropPin
 						+ "&Version="    + version;
 				if (notes != null && notes.Trim().Length > 0)
 					fixedData += "&Notes=" + WebUtility.UrlEncode(notes);
 
-					string url = Properties.Settings.Default.ServerURL + "?"
+					string url = PropServerURL + "?"
 						+ fixedData
 						// dynamic data from MSFS
 						+ "&AircraftType=" + aircraft_type.ToString()
@@ -367,22 +396,7 @@ namespace VirtualFlightOnlineTransmitter
 		/// <summary>Helper method to connect to SimConnect and update the interface appropriately</summary>
 		private void UserConnect()
 		{
-			WriteLine("Button Connect");
-			Properties.Settings.Default.Save();
-			tbRefresh_Leave(this, null);
-			// first check if the default parameters have been changed, check if the parameters are empty
-			if (tbCallsign.Text == "Your Callsign" || tbCallsign.Text == string.Empty ||
-					tbPilotName.Text == "Your Name" || tbPilotName.Text == string.Empty ||
-					tbGroupName.Text == string.Empty || tbServerURL.Text == string.Empty)
-			{
-				MessageBox.Show("It looks like you haven't changed your server, callsign, name or groupname yet.\n " +
-												"Please set them properly before connecting.",
-												"Let's do this first", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-				EnableTextBoxes(true);
-				state = State.Off;
-				SetMessage("Off");
-				return;
-			}
+			LogInfo("Button Connect");
 			Connect();
 		}
 
@@ -423,8 +437,8 @@ namespace VirtualFlightOnlineTransmitter
 				this.fsConnector = null;
 				if (autoKill)
 				{
-					if (simVersion != null) { 
-						WriteLine("AutoKill active - no Sim found - bye bye");
+					if (autoKillActivated) { 
+						LogInfo("AutoKill active - no Sim found - bye bye");
 						this.Close();
 					} else {
 						LogDebug("AutoKill is watching ... ");
@@ -440,7 +454,7 @@ namespace VirtualFlightOnlineTransmitter
 
 		private void UserDisconnect()
 		{
-			WriteLine("Button Disconnect");
+			LogInfo("Button Disconnect");
 			state = State.Off;
 			Disconnect();
 			// switch the UI components back on
@@ -458,18 +472,18 @@ namespace VirtualFlightOnlineTransmitter
 				{
 					fsConnector.Disconnect(); 
 					fsConnector.FsDataReceived -= this.HandleReceivedFsData;					
-					WriteLine("Breaking: Disconnected from Sim");
+					LogInfo("Breaking: Disconnected from Sim");
 				}
 			}
 			catch (Exception ex)
 			{
-				WriteLine("Disconnect Error: " + ex.Message);
+				LogDebug("Disconnect Error: " + ex.Message);
 			}
 		}
 
 		void SetMessage(string message)
 		{
-			string text =   "Sim: " + simVersion + " " + simState  +
+			string text =   "Sim: " + simVersion + " " + lastSimState  +
 									" | Data: " + (dataReceived ? "OK" : "--") +
 									" | Serv: " + (dataSendOkay ? "OK" : "--") +
 									" | " + message;
@@ -539,8 +553,7 @@ namespace VirtualFlightOnlineTransmitter
 
 		private void btnConnect_Click(object sender, EventArgs e)
 		{
-			Properties.Settings.Default.Save();
-			
+			PropSave();			
 			UserConnect();
 		}
 
@@ -554,7 +567,7 @@ namespace VirtualFlightOnlineTransmitter
 		/// <param name="e"></param>
 		private void Main_FormClosing(object sender, FormClosingEventArgs e)
 		{
-			WriteLine("Form closing");
+			LogInfo("Form closing");
 			// If the simulator is connected, ask the user if they really want to close Transmitter
 			if (simVersion != null && fsConnector != null && fsConnector.Connected)
 			{
@@ -573,31 +586,31 @@ namespace VirtualFlightOnlineTransmitter
 
 		private void tbServerURL_TextChanged(object sender, EventArgs e)
 		{
-			Properties.Settings.Default.ServerURL = tbServerURL.Text;
+			PropServerURL = tbServerURL.Text;
 		}
 		private void tbPin_TextChanged(object sender, EventArgs e)
 		{
-			Properties.Settings.Default.Pin = tbPin.Text;
+			PropPin = tbPin.Text;
 		}
 		private void tbCallsign_TextChanged(object sender, EventArgs e)
 		{
-			Properties.Settings.Default.Callsign = tbCallsign.Text;
+			PropCallsign = tbCallsign.Text;
 		}
 		private void tbPilotName_TextChanged(object sender, EventArgs e)
 		{
-			Properties.Settings.Default.PilotName = tbPilotName.Text;
+			PropPilotName = tbPilotName.Text;
 		}
 		private void tbGroupName_TextChanged(object sender, EventArgs e)
 		{
-			Properties.Settings.Default.GroupName = tbGroupName.Text.Trim();
+			PropGroupName = tbGroupName.Text.Trim();
 		}
 		private void cbMSFSServer_SelectedIndexChanged(object sender, EventArgs e)
 		{
-			Properties.Settings.Default.MSFSServer = cbMSFSServer.Text;
+			PropMSFSServer = cbMSFSServer.Text;
 		}
 		private void tbNotes_TextChanged(object sender, EventArgs e)
 		{
-			Properties.Settings.Default.Notes = tbNotes.Text.Trim();
+			PropNotes = tbNotes.Text.Trim();
 		}
 
 		private void tbRefresh_Leave(object sender, EventArgs e)
@@ -611,14 +624,8 @@ namespace VirtualFlightOnlineTransmitter
 			{
 				SetMessage(formatException.Message);
 			}
-			if (value < REFRESH_MILLIS_MIN)
-			{
-				value = REFRESH_MILLIS_MIN;
-				tbRefresh.Text = "" + REFRESH_MILLIS_MIN;
-			}
-			Properties.Settings.Default.RefreshMillis = value;
-			Properties.Settings.Default.Save();
-			tbRefresh.Text = tbRefresh.Text.Trim();
+			PropRefreshMillis = Math.Max(REFRESH_MILLIS_MIN, value);
+			tbRefresh.Text = PropRefreshMillis.ToString();
 		}
 
 		/// <summary>Handle users clicking on the About menu option (show a message)</summary>
@@ -627,19 +634,19 @@ namespace VirtualFlightOnlineTransmitter
 		private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
 		{
 			string version = System.Windows.Forms.Application.ProductVersion;
-			MessageBox.Show("Based on Transmitter\n" +
-											"by Jonathan Beckett\n" +
-											"Virtual Flight Online\n" +
-											"https://virtualflight.online\n" +
-											"Version " + version + " by Soulsurfer", 
-											"About", MessageBoxButtons.OK, MessageBoxIcon.Information);
+			MessageBox.Show("Based on Transmitter by Jonathan Beckett\n" +
+											"Virtual Flight Online https://virtualflight.online\n\n" +
+											"Version " + version + " see https://github.com/Soulsurfer4/\n\n"+
+											"Forumlink  https://www.flusi.info/forum/",
+											"About Virtual Flight Transmitter Online", 
+											MessageBoxButtons.OK, MessageBoxIcon.Information);
 		}
 		/// <summary>Exits the application (shuts things down first)</summary>
 		/// <param name="sender"></param>
 		/// <param name="e"></param>
 		private void exitToolStripMenuItem1_Click(object sender, EventArgs e)
 		{
-			WriteLine("Menu > exit");
+			LogInfo("Menu > exit");
 			Disconnect();
 			if (fsConnector != null)
 			{
@@ -657,23 +664,10 @@ namespace VirtualFlightOnlineTransmitter
 		/// <param name="e"></param>
 		private void resetSettingsToDefaultsToolStripMenuItem_Click(object sender, EventArgs e)
 		{
-			if (!fsConnector.Connected)
-			{
-				tbServerURL.Text = "https://yourserver/send.php";
-				tbPin.Text = "1003";
-				tbCallsign.Text = "Your Callsign";
-				tbPilotName.Text = "Your Name";
-				tbGroupName.Text = "Your Group";
-				cbMSFSServer.Text = "SOUTH EAST ASIA";
-				tbRefresh.Text = "5000";
-
-				// save the settings
-				Properties.Settings.Default.Save();
-			}
-			else
-			{
-				MessageBox.Show("Please disconnect from the simulator first", "Disconnect First", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-			}
+			ResetProps();
+			setPropsToDisplay();
+			// save the settings
+			PropSave();
 		}
 
 		private void aircraftDataToolStripMenuItem_Click(object sender, EventArgs e)
@@ -686,6 +680,73 @@ namespace VirtualFlightOnlineTransmitter
 			{
 				this.Height = this.MinimumSize.Height;
 			}
+		}
+
+		private void ResetProps()
+		{
+			PropServerURL = "https://yourserver/send.php";
+			PropPin = "1234";
+			PropCallsign = "Your Callsign";
+			PropPilotName = "Your Name";
+			PropGroupName = "Your Group";
+			PropMSFSServer = "SOUTH EAST ASIA";
+			PropRefreshMillis = 3000;
+			PropMagicArgs = "";
+		}
+		private void PropLoad()
+		{
+			string[] lines;
+			try
+			{
+				lines = System.IO.File.ReadAllLines("transmitter.ini");
+				foreach (string line in lines)
+				{
+					string[] keyval = line.Split('=');
+					if (keyval.Length == 2)
+					{
+						switch (keyval[0])
+						{
+							case "ServerURL": PropServerURL = keyval[1]; break;
+							case "Pin": PropPin = keyval[1]; break;
+							case "RefreshMillis": PropRefreshMillis = Int32.Parse(keyval[1]); break;
+							case "Callsign": PropCallsign = keyval[1]; break;
+							case "PilotName": PropPilotName = keyval[1]; break;
+							case "GroupName": PropGroupName = keyval[1]; break;
+							case "MSFSServer": PropMSFSServer = keyval[1]; break;
+							case "MagicArgs": PropMagicArgs = keyval[1]; break;
+							default:
+								break;
+						}
+					}
+				}
+			}
+			catch (Exception e)
+			{
+				LogInfo("Loading transmitter.ini failed: " + e.Message);
+				return;
+			}
+			PropRefreshMillis = Math.Max(REFRESH_MILLIS_MIN, PropRefreshMillis);
+		}
+
+		private void PropSave()
+		{
+			try
+			{
+				System.IO.File.WriteAllText("transmitter.ini",
+					"ServerURL=" + PropServerURL + "\r\n" +
+					"Pin=" + PropPin + "\r\n" +
+					"RefreshMillis=" + PropRefreshMillis + "\r\n" +
+					"MSFSServer=" + PropMSFSServer + "\r\n" +
+					"Callsign=" + PropCallsign + "\r\n" +
+					"PilotName=" + PropPilotName + "\r\n" +
+					"GroupName=" + PropGroupName + "\r\n" +
+					"MagicArgs=" + PropMagicArgs + "\r\n");
+			}
+			catch (Exception e)
+			{
+				LogInfo("Saving transmitter.ini failed: " + e.Message);
+				throw;
+			}	
 		}
 
 		/// <summary>Time the connection to the simulator started (used to calculate how long the user has been connected)</summary>
